@@ -1,0 +1,32 @@
+{
+  "name": "reachinbox-email-scheduler",
+  "version": "1.0.0",
+  "description": "ReachInbox Full-stack Email Job Scheduler",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"blue,green\" \"npm run dev --workspace=backend\" \"npm run dev --workspace=frontend\"",
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend",
+    "build:backend": "npm run build --workspace=backend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "start:backend": "npm run start --workspace=backend",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "verify:stage1": "npm run verify:stage1 --workspace=backend",
+    "verify:stage3": "npm run verify:stage3 --workspace=backend",
+    "verify:stage4": "npm run verify:stage4 --workspace=backend",
+    "verify:stage5": "npm run verify:stage5 --workspace=backend",
+    "verify:stage6": "npm run verify:stage6 --workspace=backend",
+    "verify:stage7": "npm run verify:stage7 --workspace=backend",
+    "verify:stage9": "npm run verify:stage9 --workspace=backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
