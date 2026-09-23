@@ -5,6 +5,8 @@ export const bullmqConnection: ConnectionOptions = {
   host: config.redis.host,
   port: config.redis.port,
   password: config.redis.password || undefined,
+  ...(config.redis.url ? { url: config.redis.url } : {}),
+  ...(config.redis.url?.startsWith('rediss://') ? { tls: {} } : {}),
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
   enableOfflineQueue: false,

@@ -20,7 +20,9 @@ export const redisOptions: RedisOptions = {
 };
 
 // Shared Redis client instance for general caching / connection checking
-export const redisClient = new Redis(redisOptions);
+export const redisClient = config.redis.url
+  ? new Redis(config.redis.url, redisOptions)
+  : new Redis(redisOptions);
 
 redisClient.on('connect', () => {
   logger.info(`Connected to Redis at ${config.redis.host}:${config.redis.port}`);

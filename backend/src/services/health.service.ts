@@ -2,6 +2,7 @@ import os from 'os';
 import { checkDatabaseHealth, DBHealthCheck } from '../config/db';
 import { checkRedisHealth, RedisHealthCheck } from '../config/redis';
 import { checkBullMQHealth } from '../queues/email.queue';
+import { checkElasticsearchHealth, ElasticsearchHealthCheck } from '../config/elasticsearch';
 import { config } from '../config/env';
 
 export interface HealthCheckResponse {
@@ -24,18 +25,23 @@ export interface HealthCheckResponse {
       queueName: string;
       error?: string;
     };
+    elasticsearch: ElasticsearchHealthCheck;
   };
 }
 
 export async function getSystemHealth(): Promise<HealthCheckResponse> {
-  const [dbHealth, redisHealth, bullmqHealth] = await Promise.all([
+  const [dbHealth, redisHealth, bullmqHealth, esHealth] = await Promise.all([
     checkDatabaseHealth(),
     checkRedisHealth(),
     checkBullMQHealth(),
+    checkElasticsearchHealth(),
   ]);
 
   const memUsage = process.memoryUsage();
-  const isHealthy = dbHealth.status === 'healthy' && redisHealth.status === 'healthy';
+  const isHealthy =
+    dbHealth.status === 'healthy' &&
+    redisHealth.status === 'healthy' &&
+    bullmqHealth.status === 'healthy';
 
   return {
     status: isHealthy ? 'ok' : 'degraded',
@@ -57,6 +63,7 @@ export async function getSystemHealth(): Promise<HealthCheckResponse> {
         queueName: config.emailQueueName,
         error: bullmqHealth.error,
       },
+      elasticsearch: esHealth,
     },
   };
 }

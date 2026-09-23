@@ -121,20 +121,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* Bull Board Queues Quick Link */}
-      <a
-        href="http://localhost:5000/admin/queues"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white bg-slate-900/60 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 transition-all group"
-      >
-        <div className="flex items-center space-x-3">
-          <div className="p-1 rounded-md bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20 transition-colors">
-            <Layers className="w-3.5 h-3.5" />
-          </div>
-          <span>Bull Board Monitor</span>
-        </div>
-        <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-indigo-400 transition-colors" />
-      </a>
+      {(() => {
+        const bullBoardUrl = import.meta.env.VITE_API_URL
+          ? `${String(import.meta.env.VITE_API_URL).replace(/\/api\/?$/, '')}/admin/queues`
+          : '/admin/queues';
+        return (
+          <a
+            href={bullBoardUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white bg-slate-900/60 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 transition-all group"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="p-1 rounded-md bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20 transition-colors">
+                <Layers className="w-3.5 h-3.5" />
+              </div>
+              <span>Bull Board Monitor</span>
+            </div>
+            <ExternalLink className="w-3 h-3 text-slate-500 group-hover:text-indigo-400 transition-colors" />
+          </a>
+        );
+      })()}
 
 
       {/* Telemetry / Quota Snapshot Card */}

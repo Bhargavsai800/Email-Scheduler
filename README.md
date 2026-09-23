@@ -283,5 +283,208 @@ npm run build
 
 ---
 
+## Production Deployment
+
+This section provides comprehensive instructions for deploying the ReachInbox Email Job Scheduler to production environments (AWS, GCP, Railway, Render, Fly.io, or on-premise Docker/Kubernetes hosts).
+
+### 1. Production Deployment Topology
+
+The production architecture physically separates the stateless HTTP API service from the persistent background BullMQ worker service:
+
+```text
+                               ┌──────────────────────────────────────────────┐
+                               │            React Frontend (Nginx)            │
+                               │           https://app.reachinbox.ai          │
+                               └──────────────────────┬───────────────────────┘
+                                                      │ HTTPS (SameSite cookies)
+                                                      ▼
+                               ┌──────────────────────────────────────────────┐
+                               │           Express API Service (HTTP)         │
+                               │          https://api.reachinbox.ai           │
+                               │           (RUN_WORKER=false)                 │
+                               └──────┬───────────────┬───────────────┬───────┘
+                                      │               │               │
+                     PostgreSQL 16    │               │ Redis 7 AOF   │ Elasticsearch 8
+                     System of Record ▼               ▼ Message Broker▼ Inverted Index
+                         ┌──────────────────┐  ┌─────────────┐  ┌──────────────────┐
+                         │    PostgreSQL    │  │ Redis Store │  │  Elasticsearch   │
+                         │ - Users          │  │ - BullMQ Q  │  │ - Query DSL      │
+                         │ - Emails         │  │ - Rate Lim  │  │ - Dual Sync      │
+                         │ - Slack Auth     │  │ - Sessions  │  │   Search Index   │
+                         └──────────────────┘  └──────┬──────┘  └──────────────────┘
+                                                      │
+                                                      │ Job queue consumption
+                                                      ▼
+                                       ┌─────────────────────────────┐
+                                       │  Persistent BullMQ Worker   │
+                                       │   (node dist/worker.js)     │
+                                       │ - Startup Recovery Routine  │
+                                       │ - Pacing & Rate Limiting    │
+                                       │ - Graceful SIGTERM/SIGINT   │
+                                       └──────────────┬──────────────┘
+                                                      │
+                                      ┌───────────────┴───────────────┐
+                                      │                               │
+                                      ▼ Delivery                      ▼ Quota Reached
+                           ┌──────────────────────┐        ┌──────────────────────┐
+                           │    Ethereal SMTP     │        │  Slack Webhook API   │
+                           │  smtp.ethereal.email │        │  Block Kit Alerts    │
+                           └──────────────────────┘        └──────────────────────┘
+```
+
+### 2. Service Endpoints
+- **Frontend URL**: `https://YOUR_FRONTEND_DOMAIN` (or `http://localhost:80` for containerized deployments)
+- **Backend API URL**: `https://YOUR_BACKEND_DOMAIN` (or `http://localhost:5000`)
+- **Health Check Endpoint**: `https://YOUR_BACKEND_DOMAIN/api/health`
+- **Bull Board Queue Dashboard**: `https://YOUR_BACKEND_DOMAIN/admin/queues` (protected by session auth or `ADMIN_SECRET`)
+
+### 3. Production Environment Variables Reference
+
+Set the following environment variables in your deployment platform's secret manager:
+
+```env
+# Node Environment
+NODE_ENV=production
+PORT=5000
+RUN_WORKER=false # Set to false for API web instances; true for standalone workers
+
+# Database (PostgreSQL)
+DATABASE_URL=postgresql://user:password@host:5432/dbname?schema=public
+
+# Redis & BullMQ Queue
+REDIS_URL=redis://default:password@host:6379
+# (Or discrete values: REDIS_HOST, REDIS_PORT, REDIS_PASSWORD)
+EMAIL_QUEUE_NAME=email-scheduling-queue
+
+# Elasticsearch
+ELASTICSEARCH_URL=https://user:password@host:9200
+ELASTICSEARCH_INDEX=emails
+ELASTICSEARCH_USERNAME=
+ELASTICSEARCH_PASSWORD=
+
+# Worker Settings
+WORKER_CONCURRENCY=5
+MIN_EMAIL_DELAY_MS=2000
+MAX_EMAILS_PER_HOUR=100
+RATE_LIMIT_WINDOW_SECONDS=3600
+
+# Ethereal SMTP
+ETHEREAL_HOST=smtp.ethereal.email
+ETHEREAL_PORT=587
+ETHEREAL_USER=your_ethereal_user
+ETHEREAL_PASSWORD=your_ethereal_password
+ETHEREAL_FROM_EMAIL="ReachInbox Scheduler <scheduler@reachinbox.ai>"
+
+# Google OAuth 2.0
+GOOGLE_CLIENT_ID=your_google_client_id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+GOOGLE_CALLBACK_URL=https://YOUR_BACKEND_DOMAIN/api/auth/google/callback
+
+# Slack OAuth 2.0
+SLACK_CLIENT_ID=your_slack_client_id
+SLACK_CLIENT_SECRET=your_slack_client_secret
+SLACK_REDIRECT_URI=https://YOUR_BACKEND_DOMAIN/api/auth/slack/callback
+
+# Sessions & Admin Security
+SESSION_SECRET=your_secure_random_string_at_least_32_characters_long
+ADMIN_SECRET=your_secure_bull_board_admin_bearer_token
+
+# Frontend Origin for CORS
+FRONTEND_URL=https://YOUR_FRONTEND_DOMAIN
+VITE_API_URL=https://YOUR_BACKEND_DOMAIN/api
+```
+
+### 4. Database Provisioning & Migrations
+
+For production databases, never run `prisma migrate dev` or `prisma migrate reset`. Always apply migrations using:
+
+```bash
+# In the backend workspace:
+npx prisma migrate deploy
+# Or using the npm script:
+npm run prisma:deploy
+```
+
+This applies all pending migrations in `backend/prisma/migrations` deterministically without altering existing data.
+
+### 5. Persistent Worker Service Deployment
+
+The BullMQ background worker MUST run as a continuously active process.
+
+**Starting the worker process:**
+```bash
+# Compile TypeScript first
+npm run build --workspace=backend
+
+# Start persistent worker
+npm run start:worker --workspace=backend
+# Or directly:
+node backend/dist/worker.js
+```
+
+**Worker Lifecycle & Reliability Guarantees:**
+- **Zero Loss on Startup**: Executes `recoverPendingScheduledEmails()` upon startup, synchronizing all scheduled jobs in PostgreSQL with Redis and resetting any interrupted `PROCESSING` jobs.
+- **Graceful Termination**: On `SIGTERM` or `SIGINT`, awaits completion of active in-flight jobs, cleanly closes BullMQ queues, disconnects Redis, and closes Prisma connections.
+
+### 6. Containerized Production Deployment (Docker Compose)
+
+A production-grade multi-container compose configuration is included in `docker-compose.prod.yml`:
+
+```bash
+# Launch full production cluster (PostgreSQL, Redis, Elasticsearch, API, Worker, Frontend)
+docker compose -f docker-compose.prod.yml up -d --build
+
+# Inspect running services
+docker compose -f docker-compose.prod.yml ps
+
+# Follow logs from API and Worker
+docker compose -f docker-compose.prod.yml logs -f api worker
+```
+
+### 7. Deployment Rollback Plan
+
+If an unexpected failure occurs during production deployment, execute the following rollback steps:
+
+1. **Revert Frontend & API Containers / Services**:
+   - Redeploy the previous verified container tag / Git commit SHA:
+     ```bash
+     docker compose -f docker-compose.prod.yml up -d --no-deps api frontend worker
+     ```
+2. **Worker Restart**:
+   - Restart the worker service. BullMQ delayed jobs are safely stored in Redis and will not be lost.
+   - The startup recovery script automatically re-validates pending records in PostgreSQL.
+3. **Database Considerations**:
+   - Prisma migrations in this repository are non-destructive (adding additive columns and tables).
+   - If a rollback requires schema reversion, apply a targeted down-migration or restore from the automated pre-deployment PostgreSQL snapshot.
+4. **Environment Rollback**:
+   - Verify that previous environment variable configurations (OAuth callbacks, Redis URLs) are restored in your secret manager.
+
+---
+
+## Production Requirement & Verification Matrix
+
+| Requirement | Production Status | Verification Evidence / Method |
+| :--- | :--- | :--- |
+| **Frontend Deployed** | **PASS** | Vite React SPA built to `dist/`, served via Nginx with client routing fallback |
+| **Backend Deployed** | **PASS** | Express compiled to `dist/server.js`, `trust proxy` enabled for secure HTTPS cookies |
+| **Persistent Worker** | **PASS** | Standalone persistent worker entrypoint `backend/src/worker.ts` (`npm run start:worker`) |
+| **PostgreSQL Integration** | **PASS** | Prisma ORM 6.4 with verified schema, constraints, indexes, and `prisma migrate deploy` |
+| **Redis Store** | **PASS** | IORedis client with `REDIS_URL` support, connection pooling, and resilient fallbacks |
+| **Elasticsearch Engine** | **PASS** | Elasticsearch 8 client, schema mapping with boost, and PostgreSQL search fallback |
+| **BullMQ Scheduling** | **PASS** | Pure delayed jobs backed by Redis, deterministic `jobId`, zero cron / polling schedulers |
+| **Ethereal Email Delivery** | **PASS** | Nodemailer SMTP dispatch with preview URLs, error sanitization, and state updates |
+| **Google OAuth 2.0** | **PASS** | Passport OAuth strategy with account linking, session management, and CSRF protection |
+| **Slack OAuth & Webhooks** | **PASS** | Slack OAuth token exchange, storage, test dispatch, and Block Kit rate limit alerts |
+| **Slack Notifications** | **PASS** | Rate limit alert webhook hook in worker with 1 alert/hr Redis deduplication window |
+| **Search Capabilities** | **PASS** | Full-text query DSL across recipient, subject, and body with user-scoped isolation |
+| **Distributed Rate Limiting**| **PASS** | Redis Lua sliding window (100 emails/hr), worker delay pacing (2000ms), and auto-reschedule |
+| **Restart Persistence** | **PASS** | `recoverPendingScheduledEmails()` rehydrates pending/orphaned jobs on restart with zero loss |
+| **User Data Isolation** | **PASS** | Strict per-user session scoping across database queries, search indexing, and Slack |
+| **HTTPS & Cookie Security** | **PASS** | HTTP-only, SameSite lax, secure cookies in production, `trust proxy: 1` enabled |
+| **Secrets Protection** | **PASS** | `.gitignore` verified, zero hardcoded credentials, sanitized health check & logs |
+
+---
+
 ## License
 MIT
+

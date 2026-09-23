@@ -20,11 +20,15 @@ const server = app.listen(PORT, async () => {
   logger.info(` Bull Board UI:      http://localhost:${PORT}/admin/queues`);
   logger.info(`=======================================================`);
 
-  // Start BullMQ background worker for processing scheduled email jobs
-  startEmailWorker();
+  if (config.runWorker) {
+    // Start BullMQ background worker for processing scheduled email jobs
+    startEmailWorker();
 
-  // Run startup recovery to re-enqueue any pending scheduled jobs from PostgreSQL
-  await recoverPendingScheduledEmails();
+    // Run startup recovery to re-enqueue any pending scheduled jobs from PostgreSQL
+    await recoverPendingScheduledEmails();
+  } else {
+    logger.info('[API Mode] RUN_WORKER=false. Persistent worker runs as an independent service.');
+  }
 });
 
 // Graceful shutdown handling
@@ -34,10 +38,12 @@ async function gracefulShutdown(signal: string) {
   server.close(async () => {
     logger.info('HTTP server closed.');
 
-    try {
-      await stopEmailWorker();
-    } catch (err) {
-      logger.warn('Error closing BullMQ worker:', err);
+    if (config.runWorker) {
+      try {
+        await stopEmailWorker();
+      } catch (err) {
+        logger.warn('Error closing BullMQ worker:', err);
+      }
     }
 
     try {

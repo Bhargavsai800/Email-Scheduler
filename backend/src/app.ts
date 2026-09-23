@@ -14,6 +14,9 @@ import apiRoutes from './routes/api.routes';
 export function createApp(): Application {
   const app: Application = express();
 
+  // Trust first proxy for secure cookies behind reverse proxies (Nginx, ALB, Cloudflare, etc.)
+  app.set('trust proxy', 1);
+
   // Security headers & CORS
   app.use(
     helmet({
@@ -47,7 +50,26 @@ export function createApp(): Application {
     queues: [new BullMQAdapter(emailQueue)],
     serverAdapter,
   });
-  app.use('/admin/queues', serverAdapter.getRouter());
+
+  // Bull Board route with production access protection
+  app.use(
+    '/admin/queues',
+    (req: Request, res: Response, next) => {
+      if (process.env.NODE_ENV === 'production') {
+        const adminSecret = process.env.ADMIN_SECRET;
+        const authHeader = req.headers.authorization;
+        if (adminSecret && authHeader === `Bearer ${adminSecret}`) {
+          return next();
+        }
+        if (req.isAuthenticated && req.isAuthenticated()) {
+          return next();
+        }
+        return res.status(401).send('Authentication required to access Bull Board dashboard.');
+      }
+      next();
+    },
+    serverAdapter.getRouter()
+  );
 
   // Mount API routes at /api
   app.use('/api', apiRoutes);

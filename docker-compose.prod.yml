@@ -1,0 +1,191 @@
+version: '3.8'
+
+# ==============================================================================
+# ReachInbox Email Scheduler - Production Multi-Container Orchestration
+# Topology:
+#   1. postgres      - Primary system of record (PostgreSQL 16)
+#   2. redis         - Distributed cache, session store, rate limits & BullMQ (Redis 7)
+#   3. elasticsearch - Search index and query DSL engine (Elasticsearch 8)
+#   4. api           - Stateless Express HTTP API service (RUN_WORKER=false)
+#   5. worker        - Persistent BullMQ background worker service (node dist/worker.js)
+#   6. frontend      - High-performance Nginx reverse proxy & React SPA
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. PostgreSQL Database
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: reachinbox_prod_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-reachinbox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reachinbox_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-reachinbox_scheduler}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-reachinbox} -d ${POSTGRES_DB:-reachinbox_scheduler}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - reachinbox_prod_net
+
+  # ----------------------------------------------------------------------------
+  # 2. Redis Store & BullMQ Broker
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: reachinbox_prod_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD:-}"
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_prod_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - reachinbox_prod_net
+
+  # ----------------------------------------------------------------------------
+  # 3. Elasticsearch Engine
+  # ----------------------------------------------------------------------------
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: reachinbox_prod_elasticsearch
+    restart: unless-stopped
+    environment:
+      - node.name=reachinbox-prod-es
+      - cluster.name=reachinbox-cluster
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+    volumes:
+      - es_prod_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'status'"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - reachinbox_prod_net
+
+  # ----------------------------------------------------------------------------
+  # 4. Web API Service (Express HTTP + Bull Board)
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reachinbox_prod_api
+    restart: unless-stopped
+    command: ["node", "dist/server.js"]
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      RUN_WORKER: "false" # Worker runs as a dedicated separate container
+      DATABASE_URL: ${DATABASE_URL:-postgresql://reachinbox:reachinbox_secret@postgres:5432/reachinbox_scheduler?schema=public}
+      REDIS_HOST: postgres
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      ELASTICSEARCH_INDEX: ${ELASTICSEARCH_INDEX:-emails}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      SESSION_SECRET: ${SESSION_SECRET:-reachinbox-production-session-secret-must-be-at-least-32-chars}
+      ADMIN_SECRET: ${ADMIN_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
+      SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+      SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET:-}
+      SLACK_REDIRECT_URI: ${SLACK_REDIRECT_URI:-}
+      ETHEREAL_HOST: ${ETHEREAL_HOST:-smtp.ethereal.email}
+      ETHEREAL_PORT: ${ETHEREAL_PORT:-587}
+      ETHEREAL_USER: ${ETHEREAL_USER:-}
+      ETHEREAL_PASSWORD: ${ETHEREAL_PASSWORD:-}
+      ETHEREAL_FROM_EMAIL: ${ETHEREAL_FROM_EMAIL:-ReachInbox Scheduler <scheduler@reachinbox.ai>}
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - reachinbox_prod_net
+
+  # ----------------------------------------------------------------------------
+  # 5. Persistent BullMQ Worker Service
+  # ----------------------------------------------------------------------------
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reachinbox_prod_worker
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql://reachinbox:reachinbox_secret@postgres:5432/reachinbox_scheduler?schema=public}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      ELASTICSEARCH_URL: ${ELASTICSEARCH_URL:-http://elasticsearch:9200}
+      ELASTICSEARCH_INDEX: ${ELASTICSEARCH_INDEX:-emails}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}
+      MIN_EMAIL_DELAY_MS: ${MIN_EMAIL_DELAY_MS:-2000}
+      MAX_EMAILS_PER_HOUR: ${MAX_EMAILS_PER_HOUR:-100}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-3600}
+      ETHEREAL_HOST: ${ETHEREAL_HOST:-smtp.ethereal.email}
+      ETHEREAL_PORT: ${ETHEREAL_PORT:-587}
+      ETHEREAL_USER: ${ETHEREAL_USER:-}
+      ETHEREAL_PASSWORD: ${ETHEREAL_PASSWORD:-}
+      ETHEREAL_FROM_EMAIL: ${ETHEREAL_FROM_EMAIL:-ReachInbox Scheduler <scheduler@reachinbox.ai>}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - reachinbox_prod_net
+
+  # ----------------------------------------------------------------------------
+  # 6. React Frontend & Nginx Static Web Server
+  # ----------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    container_name: reachinbox_prod_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    networks:
+      - reachinbox_prod_net
+
+volumes:
+  postgres_prod_data:
+    driver: local
+  redis_prod_data:
+    driver: local
+  es_prod_data:
+    driver: local
+
+networks:
+  reachinbox_prod_net:
+    driver: bridge
