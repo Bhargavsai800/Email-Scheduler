@@ -24,7 +24,8 @@
     "verify:stage5": "npm run verify:stage5 --workspace=backend",
     "verify:stage6": "npm run verify:stage6 --workspace=backend",
     "verify:stage7": "npm run verify:stage7 --workspace=backend",
-    "verify:stage9": "npm run verify:stage9 --workspace=backend"
+    "verify:stage9": "npm run verify:stage9 --workspace=backend",
+    "test": "npm run verify:stage9 --workspace=backend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

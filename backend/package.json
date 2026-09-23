@@ -17,6 +17,7 @@
     "verify:stage6": "tsx src/utils/verify-stage6.ts",
     "verify:stage7": "tsx src/utils/verify-stage7.ts",
     "verify:stage9": "tsx src/utils/verify-stage9.ts",
+    "test": "tsx src/utils/verify-stage9.ts",
     "ethereal:setup": "tsx scripts/create-ethereal-account.ts"
   },
   "dependencies": {

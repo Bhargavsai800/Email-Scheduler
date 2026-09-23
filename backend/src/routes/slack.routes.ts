@@ -10,6 +10,10 @@ import { requireAuth } from '../middleware/auth.middleware';
 
 const router = Router();
 
+// Slack OAuth initiation & callback
+router.get('/connect', requireAuth, initiateSlackOAuth);
+router.get('/callback', handleSlackCallback);
+
 // Slack Connection Management
 router.get('/status', requireAuth, getSlackStatus);
 router.post('/test', requireAuth, sendTestNotification);
