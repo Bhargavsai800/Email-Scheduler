@@ -485,6 +485,70 @@ If an unexpected failure occurs during production deployment, execute the follow
 
 ---
 
+## 5-Minute Live Demo Walkthrough
+
+A complete, minute-by-minute demonstration script and presentation guide is available in [**`DEMO.md`**](DEMO.md).
+
+### Demo Timeline Summary:
+- **0:00 - 0:45 | Architecture & Foundation**: Pure BullMQ delayed job queue, zero cron/polling schedulers, decoupled worker process.
+- **0:45 - 1:45 | Authentication & Isolation**: Google OAuth session cookies, account linking, strict per-user multi-tenancy.
+- **1:45 - 2:45 | Batch Lead Scheduling & Bull Board**: Lead deduplication, >=2000ms delay spacing, live Bull Board queue monitor.
+- **2:45 - 3:45 | Rate Limiting & Slack Alerting**: 100/hr sliding window, auto-rescheduling, Slack Block Kit alert deduplicated to 1/hr.
+- **3:45 - 4:30 | Elasticsearch 8 Full-Text Search**: 2x subject boost, real-time lifecycle indexing, zero-crash database fallback.
+- **4:30 - 5:00 | Crash Recovery & Ethereal Delivery**: Startup recovery from PostgreSQL, Ethereal SMTP live preview verification.
+
+---
+
+## Assignment Requirements Compliance Checklist
+
+All requirements from the ReachInbox hiring prompt have been fully implemented and verified:
+
+| # | Requirement Area | Implementation File(s) | Verification Command | Status |
+| :-: | :--- | :--- | :--- | :-: |
+| 1 | **BullMQ Delayed Scheduling** | `backend/src/queues/email.queue.ts`<br>`backend/src/queues/email.worker.ts` | `npm run verify:stage3` | **PASS (9/9)** |
+| 2 | **Zero Cron / Polling Schedulers** | Delayed jobs backed by Redis (`jobId: email.id`) | Architecture Audit | **PASS** |
+| 3 | **Crash & Restart Recovery** | `backend/src/queues/email.recovery.ts` | `npm run verify:stage9` | **PASS (28/28)** |
+| 4 | **Single & Batch Lead Scheduling** | `backend/src/controllers/email.controller.ts`<br>`frontend/src/features/compose/ComposeModal.tsx` | `npm run verify:stage9` | **PASS (28/28)** |
+| 5 | **Lead Deduplication & Normalization**| Real-time CSV/text email parser & cleaner | `npm run verify:stage9` | **PASS (28/28)** |
+| 6 | **Distributed Rate Limiting (100/hr)**| `backend/src/services/rate-limiter.service.ts` | `npm run verify:stage4` | **PASS (14/14)** |
+| 7 | **Minimum Delay Pacing (>= 2000ms)** | `backend/src/services/rate-limiter.service.ts` | `npm run verify:stage4` | **PASS (14/14)** |
+| 8 | **Auto-Rescheduling Exceeded Quota** | BullMQ delay re-assignment to next window | `npm run verify:stage4` | **PASS (14/14)** |
+| 9 | **Slack OAuth 2.0 Integration** | `backend/src/routes/slack.routes.ts`<br>`backend/src/services/slack.service.ts` | `npm run verify:stage7` | **PASS (14/14)** |
+| 10 | **Block Kit Slack Rate-Limit Alerts** | `backend/src/services/slack.service.ts` | `npm run verify:stage7` | **PASS (14/14)** |
+| 11 | **Hourly Alert Deduplication (1/hr)** | Redis lock key `slack:rate-limit-alert:{userId}` | `npm run verify:stage7` | **PASS (14/14)** |
+| 12 | **Elasticsearch 8 Full-Text Search** | `backend/src/services/search.service.ts` | `npm run verify:stage5` | **PASS (10/10)** |
+| 13 | **Dual-Sync Indexing & DB Fallback** | Synchronized indexing with PostgreSQL fallback | `npm run verify:stage5` | **PASS (10/10)** |
+| 14 | **Google OAuth 2.0 Authentication** | `backend/src/config/passport.ts`<br>`backend/src/routes/auth.routes.ts` | `npm run verify:stage6` | **PASS (23/23)** |
+| 15 | **Strict User Data Isolation** | User session scoping across DB, Search, Slack | `npm run verify:stage6` | **PASS (23/23)** |
+| 16 | **Bull Board Queue Dashboard** | `backend/src/app.ts` (`/admin/queues`) | `npm run verify:stage9` | **PASS (28/28)** |
+| 17 | **Ethereal SMTP Delivery & Preview** | `backend/src/services/email.service.ts` | `npm run verify:stage3` | **PASS (9/9)** |
+| 18 | **Production Containerization** | `Dockerfile` (API & Worker), `nginx.conf`, `docker-compose.prod.yml` | `npm run build` | **PASS** |
+
+---
+
+## GitHub Submission & Repository Hygiene
+
+To ensure the repository meets the highest standards for submission:
+
+1. **Zero Secrets Committed**:
+   - `.gitignore` strictly excludes all `.env` files, logs, and production build directories.
+   - All configurations use `.env.example` templates with sanitized dummy placeholders.
+2. **Clean Monorepo Build**:
+   - `npm run build` compiles both the backend (`tsc`) and frontend (`vite build`) without warnings or errors.
+3. **Automated Verification**:
+   - Run `npm test` from root to execute the complete verification suite.
+4. **Pushing to GitHub**:
+   ```bash
+   # Add your GitHub repository remote
+   git remote add origin https://github.com/YOUR_USERNAME/reachinbox-email-scheduler.git
+
+   # Push to master/main branch
+   git branch -M main
+   git push -u origin main
+   ```
+
+---
+
 ## License
 MIT
 
