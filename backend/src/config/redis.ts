@@ -6,13 +6,14 @@ export const redisOptions: RedisOptions = {
   host: config.redis.host,
   port: config.redis.port,
   password: config.redis.password || undefined,
+  ...(config.redis.url?.startsWith('rediss://') ? { tls: {} } : {}),
   maxRetriesPerRequest: null, // Required by BullMQ
   enableReadyCheck: false,
   enableOfflineQueue: false, // Prevents queuing commands when disconnected
   lazyConnect: true,
-  connectTimeout: 1000,
+  connectTimeout: 5000,
   retryStrategy(times) {
-    if (times > 2) {
+    if (times > 5) {
       return null; // Stop retrying when Redis is offline to prevent error loops
     }
     return Math.min(times * 300, 1000);
@@ -43,12 +44,12 @@ export async function checkRedisHealth(): Promise<RedisHealthCheck> {
   try {
     if (redisClient.status !== 'ready') {
       const connectPromise =
-        redisClient.status === 'close' || redisClient.status === 'end'
+        redisClient.status === 'close' || redisClient.status === 'end' || redisClient.status === 'wait'
           ? redisClient.connect().catch(() => {})
           : Promise.resolve();
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Redis connection timed out (1000ms)')), 1000)
+        setTimeout(() => reject(new Error('Redis connection timed out (3000ms)')), 3000)
       );
 
       await Promise.race([connectPromise, timeoutPromise]);
@@ -56,7 +57,7 @@ export async function checkRedisHealth(): Promise<RedisHealthCheck> {
 
     const pingPromise = redisClient.ping();
     const timeoutPromise = new Promise<string>((_, reject) =>
-      setTimeout(() => reject(new Error('Redis ping timed out (1000ms)')), 1000)
+      setTimeout(() => reject(new Error('Redis ping timed out (3000ms)')), 3000)
     );
 
     const pong = await Promise.race([pingPromise, timeoutPromise]);
