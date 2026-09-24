@@ -5,6 +5,26 @@ import { config } from './env';
 import { logger } from '../utils/logger';
 
 /**
+ * Adapts ioredis client to match connect-redis v10 expectations:
+ * connect-redis v10 passes { expiration: { type: 'EX', value: ttl } }
+ * whereas ioredis expects ('EX', ttl) as positional arguments.
+ */
+function createConnectRedisClient(client: typeof redisClient) {
+  return {
+    get: (key: string) => client.get(key),
+    set: (key: string, val: string, options?: any) => {
+      if (options?.expiration?.type === 'EX') {
+        return client.set(key, val, 'EX', options.expiration.value);
+      }
+      return client.set(key, val);
+    },
+    del: (key: string) => client.del(key),
+    expire: (key: string, ttl: number) => client.expire(key, ttl),
+    mget: (...keys: string[]) => client.mget(...keys),
+  };
+}
+
+/**
  * Resilient Session Store that delegates to Redis when connected,
  * and transparently falls back to MemoryStore when Redis is offline
  * during local development, testing, or temporary outages.
@@ -16,7 +36,7 @@ class ResilientSessionStore extends session.Store {
   constructor() {
     super();
     this.redisStore = new RedisStore({
-      client: redisClient as any,
+      client: createConnectRedisClient(redisClient) as any,
       prefix: 'sess:',
     });
     this.memoryStore = new session.MemoryStore();
@@ -29,9 +49,11 @@ class ResilientSessionStore extends session.Store {
   get(sid: string, callback: (err: any, session?: session.SessionData | null) => void): void {
     if (this.isRedisReady()) {
       this.redisStore.get(sid, (err, data) => {
-        if (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          logger.warn(`Redis session get error, using memory fallback: ${msg}`);
+        if (err || !data) {
+          if (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            logger.warn(`Redis session get error, using memory fallback: ${msg}`);
+          }
           return this.memoryStore.get(sid, callback);
         }
         callback(null, data);
