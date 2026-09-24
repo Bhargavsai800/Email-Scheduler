@@ -22,11 +22,14 @@ export function errorHandler(
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
   });
 
+  const isAuthError = err.name === 'TokenError' || req.path.startsWith('/api/auth');
+  const safeMessage = isAuthError ? 'Google authentication failed.' : message;
+
   res.status(statusCode).json({
     success: false,
     error: {
-      message,
-      ...(process.env.NODE_ENV === 'development' ? { stack: err.stack, details: err.details } : {}),
+      message: safeMessage,
+      ...(!isAuthError && process.env.NODE_ENV === 'development' ? { stack: err.stack, details: err.details } : {}),
     },
   });
 }
