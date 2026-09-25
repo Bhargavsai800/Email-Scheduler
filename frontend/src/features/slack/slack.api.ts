@@ -14,13 +14,15 @@ export interface SlackStatusResponse {
   };
 }
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '') + '/api';
+
 export const slackApi = {
   /**
    * Fetches the current user's Slack connection status.
    */
   async getStatus(): Promise<{ isConnected: boolean; connection: SlackConnectionData | null }> {
     try {
-      const response = await fetch('/api/slack/status', {
+      const response = await fetch(`${API_BASE_URL}/slack/status`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -43,7 +45,7 @@ export const slackApi = {
    */
   async sendTestMessage(): Promise<{ success: boolean; message: string }> {
     try {
-      const response = await fetch('/api/slack/test', {
+      const response = await fetch(`${API_BASE_URL}/slack/test`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -74,7 +76,7 @@ export const slackApi = {
    */
   async disconnect(): Promise<boolean> {
     try {
-      const response = await fetch('/api/slack/disconnect', {
+      const response = await fetch(`${API_BASE_URL}/slack/disconnect`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -90,6 +92,6 @@ export const slackApi = {
    * Returns the OAuth initiation URL.
    */
   getOAuthUrl(): string {
-    return '/api/auth/slack';
+    return `${API_BASE_URL}/auth/slack`;
   },
 };

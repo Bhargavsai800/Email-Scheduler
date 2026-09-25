@@ -1,5 +1,7 @@
 import { User, AuthResponse } from './auth.types';
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/api\/?$/, '') + '/api';
+
 export const authApi = {
   /**
    * Retrieves the current authenticated user session.
@@ -7,7 +9,7 @@ export const authApi = {
    */
   async getCurrentUser(): Promise<User | null> {
     try {
-      const response = await fetch('/api/auth/me', {
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -35,7 +37,7 @@ export const authApi = {
    * Destroys current session on backend and clears session cookie.
    */
   async logout(): Promise<void> {
-    const response = await fetch('/api/auth/logout', {
+    const response = await fetch(`${API_BASE_URL}/auth/logout`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -52,6 +54,6 @@ export const authApi = {
    * Returns the endpoint URL to initiate Google OAuth 2.0 flow.
    */
   getGoogleAuthUrl(): string {
-    return '/api/auth/google';
+    return `${API_BASE_URL}/auth/google`;
   },
 };
