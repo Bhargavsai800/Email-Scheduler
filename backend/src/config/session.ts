@@ -101,6 +101,7 @@ class ResilientSessionStore extends session.Store {
 }
 
 export function createSessionMiddleware(): any {
+  const isProd = config.nodeEnv === 'production';
   return session({
     store: new ResilientSessionStore(),
     secret: config.auth.sessionSecret,
@@ -108,8 +109,8 @@ export function createSessionMiddleware(): any {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: config.nodeEnv === 'production',
-      sameSite: 'lax',
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     },
   });
